@@ -1,9 +1,13 @@
 //! Client implementation for the gRPC service.
+use std::io::{Read, Write};
+use std::net::TcpStream;
 use std::num::ParseIntError;
 
 use futures_util::stream::MapOk;
 use futures_util::{Stream, StreamExt, TryStreamExt};
+use openssl::ssl::{SslConnector, SslMethod};
 use starknet::core::types::{FromStrError, StateDiff, StateUpdate};
+use tonic::transport::{Certificate, ClientTlsConfig, Endpoint};
 use starknet_crypto::FieldElement;
 
 use crate::proto::world::{
@@ -41,15 +45,44 @@ pub struct WorldClient {
 
 impl WorldClient {
     #[cfg(not(target_arch = "wasm32"))]
-    pub async fn new<D>(dst: D, _world_address: FieldElement) -> Result<Self, Error>
-    where
-        D: TryInto<tonic::transport::Endpoint>,
-        D::Error: Into<Box<(dyn std::error::Error + Send + Sync + 'static)>>,
+    pub async fn new(dst: String, _world_address: FieldElement) -> Result<Self, Error>
     {
-        Ok(Self {
-            _world_address,
-            inner: world_client::WorldClient::connect(dst).await.map_err(Error::Transport)?,
-        })
+        let endpoint = Endpoint::from_shared(dst).unwrap();
+        let uri = endpoint.uri().clone();
+        // Localhost
+        if uri.to_string().starts_with("http://") {
+            return Ok(Self {
+                _world_address,
+                inner: world_client::WorldClient::connect(endpoint)
+                    .await
+                    .map_err(Error::Transport)?,
+            });
+        }
+
+        let host = uri.host().unwrap();
+        let connector = SslConnector::builder(SslMethod::tls()).unwrap().build();
+        let mut stream = connector
+            .connect(&host, TcpStream::connect(&(host.to_owned() + ":443")).unwrap())
+            .unwrap();
+
+        stream.write_all(b"GET / HTTP/1.0\r\n\r\n").unwrap();
+        let mut response = vec![];
+        stream.read_to_end(&mut response).unwrap();
+
+        let certs = stream.ssl().peer_cert_chain().unwrap();
+        let mut certs_str = String::new();
+        for cert in certs {
+            let pem = cert.to_pem().unwrap();
+            certs_str.push_str(std::str::from_utf8(&pem).unwrap());
+        }
+
+        let config = ClientTlsConfig::new()
+            .ca_certificate(Certificate::from_pem(&certs_str))
+            .domain_name(host);
+
+        let channel = endpoint.tls_config(config).unwrap().connect().await.unwrap();
+
+        Ok(Self { _world_address, inner: world_client::WorldClient::with_origin(channel, uri) })
     }
 
     // we make this function async so that we can keep the function signature similar
