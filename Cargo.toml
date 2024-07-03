@@ -208,7 +208,7 @@ warp = "0.3"
 
 # gRPC
 prost = "0.12"
-tonic = "0.10"
+tonic = { version = "0.11", features = [ "tls" ] }
 tonic-build = "0.10.1"
 tonic-reflection = "0.10.1"
 tonic-web = "0.10.1"

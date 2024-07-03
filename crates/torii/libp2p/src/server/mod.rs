@@ -399,6 +399,7 @@ impl<P: Provider + Sync> Relay<P> {
                         ServerEvent::Identify(identify::Event::Received {
                             info: identify::Info { observed_addr, .. },
                             peer_id,
+                            ..
                         }) => {
                             info!(
                                 target: LOG_TARGET,
