@@ -1,16 +1,13 @@
 //! Client implementation for the gRPC service.
-use std::num::ParseIntError;
-
-use openssl::ssl::{SslMethod, SslConnector};
-use std::net::TcpStream;
 use std::io::{Read, Write};
-
+use std::net::TcpStream;
+use std::num::ParseIntError;
 
 use futures_util::stream::MapOk;
 use futures_util::{Stream, StreamExt, TryStreamExt};
+use openssl::ssl::{SslConnector, SslMethod};
 use starknet::core::types::{Felt, FromStrError, StateDiff, StateUpdate};
-use tonic::transport::Endpoint;
-use tonic::transport::{Certificate, ClientTlsConfig};
+use tonic::transport::{Certificate, ClientTlsConfig, Endpoint};
 
 use crate::proto::world::{
     world_client, MetadataRequest, RetrieveEntitiesRequest, RetrieveEntitiesResponse,
@@ -47,21 +44,24 @@ pub struct WorldClient {
 
 impl WorldClient {
     #[cfg(not(target_arch = "wasm32"))]
-    pub async fn new(dst: String, _world_address: Felt) -> Result<Self, Error>
-    {
+    pub async fn new(dst: String, _world_address: Felt) -> Result<Self, Error> {
         let endpoint = Endpoint::from_shared(dst).unwrap();
         let uri = endpoint.uri().clone();
         // Localhost
         if uri.to_string().starts_with("http://") {
             return Ok(Self {
                 _world_address,
-                inner: world_client::WorldClient::connect(endpoint).await.map_err(Error::Transport)?,
-            })
+                inner: world_client::WorldClient::connect(endpoint)
+                    .await
+                    .map_err(Error::Transport)?,
+            });
         }
 
         let host = uri.host().unwrap();
         let connector = SslConnector::builder(SslMethod::tls()).unwrap().build();
-        let mut stream = connector.connect(&host, TcpStream::connect(&(host.to_owned() + ":443")).unwrap()).unwrap();
+        let mut stream = connector
+            .connect(&host, TcpStream::connect(&(host.to_owned() + ":443")).unwrap())
+            .unwrap();
 
         stream.write_all(b"GET / HTTP/1.0\r\n\r\n").unwrap();
         let mut response = vec![];
@@ -78,17 +78,9 @@ impl WorldClient {
             .ca_certificate(Certificate::from_pem(&certs_str))
             .domain_name(host);
 
-        let channel = endpoint
-            .tls_config(config)
-            .unwrap()
-            .connect()
-            .await
-            .unwrap();
+        let channel = endpoint.tls_config(config).unwrap().connect().await.unwrap();
 
-        Ok(Self {
-            _world_address,
-            inner: world_client::WorldClient::with_origin(channel, uri),
-         })
+        Ok(Self { _world_address, inner: world_client::WorldClient::with_origin(channel, uri) })
     }
 
     // we make this function async so that we can keep the function signature similar
