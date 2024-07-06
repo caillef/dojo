@@ -9,7 +9,6 @@ use std::io::{Read, Write};
 use futures_util::stream::MapOk;
 use futures_util::{Stream, StreamExt, TryStreamExt};
 use starknet::core::types::{Felt, FromStrError, StateDiff, StateUpdate};
-use starknet_crypto::FieldElement;
 use tonic::transport::Endpoint;
 use tonic::transport::{Certificate, ClientTlsConfig};
 
