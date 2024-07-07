@@ -14133,8 +14133,7 @@ dependencies = [
 [[package]]
 name = "starknet-types-core"
 version = "0.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ce6bacf0ba19bc721e518bc4bf389ff13daa8a7c5db5fd320600473b8aa9fcbd"
+source = "git+https://github.com/dojoengine/types-rs?rev=a6bcf4a#a6bcf4a5471d3673d23fda30fc55f7b333f4ec14"
 dependencies = [
  "lambdaworks-crypto",
  "lambdaworks-math",
