@@ -2,12 +2,14 @@
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::num::ParseIntError;
+use std::str::Utf8Error;
 
 use futures_util::stream::MapOk;
 use futures_util::{Stream, StreamExt, TryStreamExt};
+use openssl::error::ErrorStack;
 use openssl::ssl::{SslConnector, SslMethod};
 use starknet::core::types::{FromStrError, StateDiff, StateUpdate};
-use tonic::transport::{Certificate, ClientTlsConfig, Endpoint};
+use tonic::transport::{Certificate, ClientTlsConfig, Endpoint, Error as TonicTransportError};
 use starknet_crypto::FieldElement;
 
 use crate::proto::world::{
@@ -16,7 +18,7 @@ use crate::proto::world::{
     SubscribeEntityResponse, SubscribeEventsRequest, SubscribeEventsResponse,
     SubscribeModelsRequest, SubscribeModelsResponse,
 };
-use crate::types::schema::{self, Entity, SchemaError};
+use crate::types::schema::{Entity, SchemaError};
 use crate::types::{EntityKeysClause, Event, EventQuery, KeysClause, ModelKeysClause, Query};
 
 #[derive(Debug, thiserror::Error)]
@@ -29,9 +31,25 @@ pub enum Error {
     ParseInt(ParseIntError),
     #[cfg(not(target_arch = "wasm32"))]
     #[error(transparent)]
-    Transport(tonic::transport::Error),
+    Transport(TonicTransportError),
     #[error(transparent)]
-    Schema(#[from] schema::SchemaError),
+    Schema(SchemaError),
+    #[error("Endpoint error: {0}")]
+    Endpoint(String),
+    #[error("Invalid URI: {0}")]
+    InvalidUri(String),
+    #[error(transparent)]
+    Ssl(ErrorStack),
+    #[error(transparent)]
+    Tls(openssl::ssl::HandshakeError<TcpStream>),
+    #[error(transparent)]
+    Tcp(std::io::Error),
+    #[error(transparent)]
+    Io(std::io::Error),
+    #[error(transparent)]
+    Utf8(Utf8Error),
+    #[error("TLS config error: {0}")]
+    TlsConfig(String),
 }
 
 /// A lightweight wrapper around the grpc client.
@@ -45,10 +63,10 @@ pub struct WorldClient {
 
 impl WorldClient {
     #[cfg(not(target_arch = "wasm32"))]
-    pub async fn new(dst: String, _world_address: FieldElement) -> Result<Self, Error>
-    {
-        let endpoint = Endpoint::from_shared(dst).unwrap();
+    pub async fn new(dst: String, _world_address: FieldElement) -> Result<Self, Error> {
+        let endpoint = Endpoint::from_shared(dst).map_err(|e| Error::Endpoint(e.to_string()))?;
         let uri = endpoint.uri().clone();
+
         // Localhost
         if uri.to_string().starts_with("http://") {
             return Ok(Self {
@@ -59,33 +77,36 @@ impl WorldClient {
             });
         }
 
-        let host = uri.host().unwrap();
-        let connector = SslConnector::builder(SslMethod::tls()).unwrap().build();
-        let mut stream = connector
-            .connect(&host, TcpStream::connect(&(host.to_owned() + ":443")).unwrap())
-            .unwrap();
+        let host = uri.host().ok_or_else(|| Error::InvalidUri("Missing host".into()))?;
+        let connector = SslConnector::builder(SslMethod::tls()).map_err(Error::Ssl)?.build();
+        let tcp_stream = TcpStream::connect(&(host.to_owned() + ":443")).map_err(Error::Tcp)?;
+        let mut stream = connector.connect(&host, tcp_stream).map_err(Error::Tls)?;
 
-        stream.write_all(b"GET / HTTP/1.0\r\n\r\n").unwrap();
+        stream.write_all(b"GET / HTTP/1.0\r\n\r\n").map_err(Error::Io)?;
         let mut response = vec![];
-        stream.read_to_end(&mut response).unwrap();
+        stream.read_to_end(&mut response).map_err(Error::Io)?;
 
-        let certs = stream.ssl().peer_cert_chain().unwrap();
+        let certs = stream.ssl().peer_cert_chain().ok_or_else(|| Error::Ssl(ErrorStack::get()))?;
         let mut certs_str = String::new();
         for cert in certs {
-            let pem = cert.to_pem().unwrap();
-            certs_str.push_str(std::str::from_utf8(&pem).unwrap());
+            let pem = cert.to_pem().map_err(Error::Ssl)?;
+            certs_str.push_str(std::str::from_utf8(&pem).map_err(Error::Utf8)?);
         }
 
         let config = ClientTlsConfig::new()
             .ca_certificate(Certificate::from_pem(&certs_str))
             .domain_name(host);
 
-        let channel = endpoint.tls_config(config).unwrap().connect().await.unwrap();
+        let channel = endpoint
+            .tls_config(config)
+            .map_err(|e| Error::TlsConfig(e.to_string()))?
+            .connect()
+            .await
+            .map_err(Error::Transport)?;
 
         Ok(Self { _world_address, inner: world_client::WorldClient::with_origin(channel, uri) })
     }
 
-    // we make this function async so that we can keep the function signature similar
     #[cfg(target_arch = "wasm32")]
     pub async fn new(endpoint: String, _world_address: FieldElement) -> Result<Self, Error> {
         Ok(Self {
@@ -94,7 +115,6 @@ impl WorldClient {
         })
     }
 
-    /// Retrieve the metadata of the World.
     pub async fn metadata(&mut self) -> Result<dojo_types::WorldMetadata, Error> {
         self.inner
             .world_metadata(MetadataRequest {})
