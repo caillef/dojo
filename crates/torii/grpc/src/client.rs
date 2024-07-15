@@ -4,6 +4,7 @@ use std::num::ParseIntError;
 use futures_util::stream::MapOk;
 use futures_util::{Stream, StreamExt, TryStreamExt};
 use starknet::core::types::{Felt, FromStrError, StateDiff, StateUpdate};
+use tonic::transport::Endpoint;
 
 use crate::proto::world::{
     world_client, MetadataRequest, RetrieveEntitiesRequest, RetrieveEntitiesResponse,
@@ -16,6 +17,8 @@ use crate::types::{EntityKeysClause, Event, EventQuery, KeysClause, ModelKeysCla
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("Endpoint error: {0}")]
+    Endpoint(String),
     #[error(transparent)]
     Grpc(tonic::Status),
     #[error(transparent)]
@@ -41,15 +44,37 @@ pub struct WorldClient {
 
 impl WorldClient {
     #[cfg(not(target_arch = "wasm32"))]
-    pub async fn new<D>(dst: D, _world_address: Felt) -> Result<Self, Error>
-    where
-        D: TryInto<tonic::transport::Endpoint>,
-        D::Error: Into<Box<(dyn std::error::Error + Send + Sync + 'static)>>,
-    {
+    pub async fn new(torii_url: String, _world_address: Felt) -> Result<Self, Error> {
+        println!("Creating endpoint from torii_url: {}", torii_url);
+        let endpoint = Endpoint::from_shared(torii_url.clone()).map_err(|e| {
+            println!("Failed to create endpoint: {}", e);
+            Error::Endpoint(e.to_string())
+        })?;
+        
+        println!("Connecting to endpoint");
+        let channel = endpoint.connect().await.map_err(|e| {
+            println!("Failed to connect to endpoint: {}", e);
+            Error::Transport(e)
+        })?;
+        
+        println!("Creating inner world client");
+        let inner = world_client::WorldClient::with_origin(channel, endpoint.uri().clone());
+        
+        println!("Successfully created client");
         Ok(Self {
-            _world_address,
-            inner: world_client::WorldClient::connect(dst).await.map_err(Error::Transport)?,
+            _world_address: _world_address,
+            inner,
         })
+        // println!("a");
+        // let endpoint = Endpoint::from_shared(dst.clone()).map_err(|e| Error::Endpoint(e.to_string()))?;
+        // println!("b");
+        // let channel = endpoint.connect().await.map_err(Error::Transport)?;
+        // println!("c");
+        // let inner = world_client::WorldClient::with_origin(channel, endpoint.uri().clone());
+        // println!("d");
+        // let instance = Self { _world_address, inner };
+        // println!("e");
+        // Ok(instance)
     }
 
     // we make this function async so that we can keep the function signature similar
