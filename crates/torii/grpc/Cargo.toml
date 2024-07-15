@@ -6,7 +6,6 @@ repository.workspace = true
 version.workspace = true
 
 [dependencies]
-openssl = "0.10.64"
 bytes.workspace = true
 dojo-types = { path = "../../dojo-types" }
 futures-util.workspace = true

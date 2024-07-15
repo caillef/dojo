@@ -1,15 +1,11 @@
 //! Client implementation for the gRPC service.
-use std::io::{Read, Write};
-use std::net::TcpStream;
 use std::num::ParseIntError;
 use std::str::Utf8Error;
 
 use futures_util::stream::MapOk;
 use futures_util::{Stream, StreamExt, TryStreamExt};
-use openssl::error::ErrorStack;
-use openssl::ssl::{SslConnector, SslMethod};
 use starknet::core::types::{FromStrError, StateDiff, StateUpdate};
-use tonic::transport::{Certificate, ClientTlsConfig, Endpoint, Error as TonicTransportError};
+use tonic::transport::{Endpoint, Error as TonicTransportError};
 use starknet_crypto::FieldElement;
 
 use crate::proto::world::{
@@ -38,10 +34,10 @@ pub enum Error {
     Endpoint(String),
     #[error("Invalid URI: {0}")]
     InvalidUri(String),
-    #[error(transparent)]
-    Ssl(ErrorStack),
-    #[error(transparent)]
-    Tls(openssl::ssl::HandshakeError<TcpStream>),
+    // #[error(transparent)]
+    // Ssl(ErrorStack),
+    // #[error(transparent)]
+    // Tls(openssl::ssl::HandshakeError<TcpStream>),
     #[error(transparent)]
     Tcp(std::io::Error),
     #[error(transparent)]
@@ -64,7 +60,7 @@ pub struct WorldClient {
 impl WorldClient {
     #[cfg(not(target_arch = "wasm32"))]
     pub async fn new(dst: String, _world_address: FieldElement) -> Result<Self, Error> {
-        let endpoint = Endpoint::from_shared(dst).map_err(|e| Error::Endpoint(e.to_string()))?;
+        let endpoint = Endpoint::from_shared(dst.clone()).map_err(|e| Error::Endpoint(e.to_string()))?;
         let uri = endpoint.uri().clone();
 
         // Localhost
@@ -77,29 +73,7 @@ impl WorldClient {
             });
         }
 
-        let host = uri.host().ok_or_else(|| Error::InvalidUri("Missing host".into()))?;
-        let connector = SslConnector::builder(SslMethod::tls()).map_err(Error::Ssl)?.build();
-        let tcp_stream = TcpStream::connect(&(host.to_owned() + ":443")).map_err(Error::Tcp)?;
-        let mut stream = connector.connect(&host, tcp_stream).map_err(Error::Tls)?;
-
-        stream.write_all(b"GET / HTTP/1.0\r\n\r\n").map_err(Error::Io)?;
-        let mut response = vec![];
-        stream.read_to_end(&mut response).map_err(Error::Io)?;
-
-        let certs = stream.ssl().peer_cert_chain().ok_or_else(|| Error::Ssl(ErrorStack::get()))?;
-        let mut certs_str = String::new();
-        for cert in certs {
-            let pem = cert.to_pem().map_err(Error::Ssl)?;
-            certs_str.push_str(std::str::from_utf8(&pem).map_err(Error::Utf8)?);
-        }
-
-        let config = ClientTlsConfig::new()
-            .ca_certificate(Certificate::from_pem(&certs_str))
-            .domain_name(host);
-
         let channel = endpoint
-            .tls_config(config)
-            .map_err(|e| Error::TlsConfig(e.to_string()))?
             .connect()
             .await
             .map_err(Error::Transport)?;
