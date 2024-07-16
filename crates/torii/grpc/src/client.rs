@@ -44,7 +44,7 @@ pub struct WorldClient {
 
 impl WorldClient {
     #[cfg(not(target_arch = "wasm32"))]
-    pub async fn new(torii_url: String, _world_address: Felt) -> Result<Self, Error> {
+    pub async fn new(dst: String, _world_address: Felt) -> Result<Self, Error> {
         let endpoint = Endpoint::from_shared(dst.clone()).map_err(|e| Error::Endpoint(e.to_string()))?;
         let channel = endpoint.connect().await.map_err(Error::Transport)?;
         Ok(Self { _world_address, inner: world_client::WorldClient::with_origin(channel, endpoint.uri().clone()) })
