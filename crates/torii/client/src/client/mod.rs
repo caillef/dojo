@@ -297,38 +297,3 @@ impl Client {
         Ok(())
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn test_client_new() {
-        let torii_url = "https://api.cartridge.gg/x/spawn-and-move-cubzh/torii".to_string();
-        let rpc_url = "https://api.cartridge.gg/x/spawn-and-move-cubzh/katana".to_string();
-        // let torii_url = "http://localhost:8080".to_string();
-        // let rpc_url = "http://localhost:5050".to_string();
-        let relay_url = "/ip4/127.0.0.1/tcp/9090".to_string();
-        let world_hex = "0x7efebb0c2d4cc285d48a97a7174def3be7fdd6b7bd29cca758fa2e17e03ef30";
-
-        let world = match Felt::from_hex(world_hex) {
-            Ok(world) => {
-                println!("Successfully created Felt from string: {}", world);
-                world
-            },
-            Err(err) => {
-                println!("Failed to create Felt from string: {}", err);
-                return;
-            }
-        };
-
-        println!("Creating client with world: {}", world);
-
-        let client = Client::new(torii_url, rpc_url, relay_url, world).await;
-
-        if let Err(ref err) = client {
-            println!("Error creating client: {}", err);
-        }
-        assert!(client.is_ok(), "Error creating client");
-    }
-}
