@@ -16,6 +16,8 @@ use crate::types::{EntityKeysClause, Event, EventQuery, KeysClause, ModelKeysCla
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("Endpoint error: {0}")]
+    Endpoint(String),
     #[error(transparent)]
     Grpc(tonic::Status),
     #[error(transparent)]
@@ -41,15 +43,10 @@ pub struct WorldClient {
 
 impl WorldClient {
     #[cfg(not(target_arch = "wasm32"))]
-    pub async fn new<D>(dst: D, _world_address: Felt) -> Result<Self, Error>
-    where
-        D: TryInto<tonic::transport::Endpoint>,
-        D::Error: Into<Box<(dyn std::error::Error + Send + Sync + 'static)>>,
-    {
-        Ok(Self {
-            _world_address,
-            inner: world_client::WorldClient::connect(dst).await.map_err(Error::Transport)?,
-        })
+    pub async fn new(dst: String, _world_address: Felt) -> Result<Self, Error> {
+        let endpoint = Endpoint::from_shared(dst.clone()).map_err(|e| Error::Endpoint(e.to_string()))?;
+        let channel = endpoint.connect().await.map_err(Error::Transport)?;
+        Ok(Self { _world_address, inner: world_client::WorldClient::with_origin(channel, endpoint.uri().clone()) })
     }
 
     // we make this function async so that we can keep the function signature similar
