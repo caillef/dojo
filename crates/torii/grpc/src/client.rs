@@ -4,6 +4,7 @@ use std::num::ParseIntError;
 use futures_util::stream::MapOk;
 use futures_util::{Stream, StreamExt, TryStreamExt};
 use starknet::core::types::{Felt, FromStrError, StateDiff, StateUpdate};
+use tonic::transport::Endpoint;
 
 use crate::proto::world::{
     world_client, MetadataRequest, RetrieveEntitiesRequest, RetrieveEntitiesResponse,
@@ -43,10 +44,14 @@ pub struct WorldClient {
 
 impl WorldClient {
     #[cfg(not(target_arch = "wasm32"))]
-    pub async fn new(dst: String, _world_address: Felt) -> Result<Self, Error> {
-        let endpoint = Endpoint::from_shared(dst.clone()).map_err(|e| Error::Endpoint(e.to_string()))?;
+    pub async fn new(dst: String, world_address: Felt) -> Result<Self, Error> {
+        let endpoint =
+            Endpoint::from_shared(dst.clone()).map_err(|e| Error::Endpoint(e.to_string()))?;
         let channel = endpoint.connect().await.map_err(Error::Transport)?;
-        Ok(Self { _world_address, inner: world_client::WorldClient::with_origin(channel, endpoint.uri().clone()) })
+        Ok(Self {
+            _world_address: world_address,
+            inner: world_client::WorldClient::with_origin(channel, endpoint.uri().clone()),
+        })
     }
 
     // we make this function async so that we can keep the function signature similar
