@@ -12,7 +12,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             panic!("feature `server` is not supported on target `{}`", target);
         }
 
-        wasm_tonic_build::configure()
+        tonic_build::configure()
             .build_server(false)
             .build_client(feature_client.is_ok())
             .file_descriptor_set_path(out_dir.join("world_descriptor.bin"))

@@ -42,7 +42,7 @@ katana-runner.workspace = true
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 tonic-web-wasm-client.workspace = true
 wasm-prost.workspace = true
-wasm-tonic.workspace = true
+tonic.workspace = true
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 prost.workspace = true
@@ -56,7 +56,6 @@ url.workspace = true
 
 [build-dependencies]
 tonic-build.workspace = true
-wasm-tonic-build.workspace = true
 
 [features]
 client = [  ]

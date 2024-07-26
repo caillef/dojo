@@ -31,7 +31,7 @@ tonic.workspace = true
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 wasm-prost.workspace = true
-wasm-tonic.workspace = true
+tonic.workspace = true
 
 [dev-dependencies]
 camino.workspace = true
